@@ -9,39 +9,85 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Download and install Kismet repository key
+# Download and install Kismet repository key if not already present
 echo -e "\e[92mDownloading and installing Kismet repository key...\e[0m"
-wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key --quiet | gpg --dearmor | sudo tee /usr/share/keyrings/kismet-archive-keyring.gpg >/dev/null
+if ! gpg --list-keys "0x6D02CCDA4D8A45B4" > /dev/null 2>&1; then
+    wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key --quiet | gpg --dearmor | sudo tee /usr/share/keyrings/kismet-archive-keyring.gpg > /dev/null 2>&1
+else
+    echo -e "\e[93mKismet repository key is already installed.\e[0m"
+fi
 
-# Add Kismet repository to sources.list
+# Add Kismet repository to sources.list if not already present
 echo -e "\e[92mAdding Kismet repository to sources.list...\e[0m"
-echo 'deb [signed-by=/usr/share/keyrings/kismet-archive-keyring.gpg] https://www.kismetwireless.net/repos/apt/release/bookworm bookworm main' | sudo tee /etc/apt/sources.list.d/kismet.list >/dev/null
+if ! grep -q 'deb \[signed-by=/usr/share/keyrings/kismet-archive-keyring.gpg\] https://www.kismetwireless.net/repos/apt/release/bookworm bookworm main' /etc/apt/sources.list.d/kismet.list; then
+    echo 'deb [signed-by=/usr/share/keyrings/kismet-archive-keyring.gpg] https://www.kismetwireless.net/repos/apt/release/bookworm bookworm main' | sudo tee -a /etc/apt/sources.list.d/kismet.list > /dev/null 2>&1
+else
+    echo -e "\e[93mKismet repository is already present in sources.list.\e[0m"
+fi
+
+
 
 # Update package information (suppress output)
 echo -e "\e[92mUpdating package information...\e[0m"
 sudo apt update -y > /dev/null 2>&1
 
-# Install Kismet and Aircrack-ng
-echo -e "\e[92mInstalling Kismet and Aircrack-ng this may take some time...\e[0m"
-echo -e "\e[92mIt may look as if im frozen but im not :)\e[0m"
-if sudo apt install kismet aircrack-ng -y > /dev/null 2>&1; then
-  echo -e "\e[92mKismet and Aircrack-ng installed successfully.\e[0m"
+# Install Kismet
+echo -e "\e[92mInstalling Kismet...\e[0m"
+sudo apt install kismet -y > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo -e "\e[92mKismet installed successfully.\e[0m"
 else
-  echo -e "\e[91mFailed to install Kismet and Aircrack-ng. Check for errors above.\e[0m"
-  exit 1
+    echo -e "\e[91mFailed to install Kismet.\e[0m"
+    exit 1
 fi
 
-# Add user to the Kismet group
+# Install Aircrack-ng
+echo -e "\e[92mInstalling Aircrack-ng...\e[0m"
+sudo apt install aircrack-ng -y > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo -e "\e[92mAircrack-ng installed successfully.\e[0m"
+else
+    echo -e "\e[91mFailed to install Aircrack-ng.\e[0m"
+    exit 1
+fi
+
+# Install gpsd and gpsd-clients
+echo -e "\e[92mInstalling gpsd and gpsd-clients...\e[0m"
+sudo apt install gpsd gpsd-clients -y > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    echo -e "\e[92mgpsd and gpsd-clients installed successfully.\e[0m"
+else
+    echo -e "\e[91mFailed to install gpsd and gpsd-clients.\e[0m"
+    exit 1
+fi
+
+sudo gpsd -F /var/run/gpsd.sock /dev/ttyACM0
+
+# Add user to the Kismet group if not already a member
 echo -e "\e[92mAdding $username to kismet group...\e[0m"
-sudo usermod -aG kismet $username
+if ! groups $username | grep -q '\bkismet\b'; then
+    sudo usermod -aG kismet $username
+else
+    echo -e "\e[93m$username is already a member of the kismet group.\e[0m"
+fi
 
-# Enable Kismet service
+# Enable Kismet service if not already enabled
 echo -e "\e[92mEnabling Kismet service...\e[0m"
-sudo systemctl enable kismet
+if ! sudo systemctl is-enabled kismet &>/dev/null; then
+    sudo systemctl enable kismet
+else
+    echo -e "\e[93mKismet service is already enabled.\e[0m"
+fi
 
-# Modify the ExecStart line to include --override wardrive
-echo -e "\e[92mAdding --override wardrive to Kismet service ExecStart line...\e[0m"
-sudo sed -i 's|^\(ExecStart=.*\)$|\1 --override wardrive|' /lib/systemd/system/kismet.service
+# Checking if --override wardrive is already in the ExecStart line
+if ! sudo grep -q 'ExecStart=.*--override wardrive' /lib/systemd/system/kismet.service; then
+    # Adding --override wardrive to the ExecStart line
+    echo -e "\e[92mAdding --override wardrive to Kismet service ExecStart line...\e[0m"
+    sudo sed -i 's|^\(ExecStart=.*\)$|\1 --override wardrive|' /lib/systemd/system/kismet.service
+else
+    # Informing that --override wardrive is already present
+    echo -e "\e[93m--override wardrive is already in Kismet service ExecStart line.\e[0m"
+fi
 
 # Reload systemd manager to apply the changes
 sudo systemctl daemon-reload
