@@ -122,4 +122,3 @@ local_ip=$(ip -4 addr show eth0 | grep -oP '(?<=inet\s)\d+(\.\d+){3}')
 echo -e "\e[92mKismet installation, configuration, and monitor mode setup completed.\e[0m"
 echo -e "\e[92mThe Kismet web UI: $local_ip:2501."
 echo -e "\e[92mSetup the user then reboot the machine for all changes to take effect."
-
